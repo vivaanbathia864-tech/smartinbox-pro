@@ -2,6 +2,9 @@ from __future__ import annotations
 
 """FastAPI application entrypoint for SmartInbox-Pro."""
 
+import os
+from pathlib import Path
+
 try:
     import gradio as gr
     from openenv.core.env_server import web_interface as openenv_web_interface
@@ -19,6 +22,9 @@ try:
 except ImportError:
     from models import SmartInboxProAction, SmartInboxProObservation
     from server.smartinbox_pro_environment import SmartInboxProEnvironment
+
+README_PATH = Path(__file__).resolve().parent.parent / "README.md"
+os.environ.setdefault("ENV_README_PATH", str(README_PATH))
 
 CUSTOM_GRADIO_THEME = gr.themes.Soft(
     primary_hue=gr.themes.colors.blue,
