@@ -3,6 +3,8 @@ from __future__ import annotations
 """FastAPI application entrypoint for SmartInbox-Pro."""
 
 try:
+    import gradio as gr
+    from openenv.core.env_server import web_interface as openenv_web_interface
     from openenv.core.env_server.http_server import create_app
 except Exception as exc:  # pragma: no cover
     raise ImportError(
@@ -18,6 +20,131 @@ except ImportError:
     from models import SmartInboxProAction, SmartInboxProObservation
     from server.smartinbox_pro_environment import SmartInboxProEnvironment
 
+CUSTOM_GRADIO_THEME = gr.themes.Soft(
+    primary_hue=gr.themes.colors.blue,
+    secondary_hue=gr.themes.colors.cyan,
+    neutral_hue=gr.themes.colors.slate,
+    font=[
+        "IBM Plex Sans",
+        "Segoe UI",
+        "Helvetica",
+        "Arial",
+        "sans-serif",
+    ],
+    font_mono=[
+        "JetBrains Mono",
+        "Cascadia Code",
+        "Consolas",
+        "monospace",
+    ],
+).set(
+    body_background_fill="#07111f",
+    background_fill_primary="#0d182b",
+    background_fill_secondary="#13213a",
+    block_background_fill="#0f1b30",
+    block_border_color="#294363",
+    block_label_text_color="#a9bdd7",
+    block_title_text_color="#eff6ff",
+    border_color_primary="#294363",
+    input_background_fill="#081121",
+    input_border_color="#315072",
+    button_primary_background_fill="#0ea5e9",
+    button_primary_background_fill_hover="#0284c7",
+    button_primary_text_color="#eff6ff",
+    button_secondary_background_fill="#16243c",
+    button_secondary_background_fill_hover="#1e3252",
+    button_secondary_text_color="#eff6ff",
+    button_secondary_border_color="#315072",
+)
+
+CUSTOM_GRADIO_CSS = """
+body {
+    background:
+        radial-gradient(circle at top left, rgba(34, 211, 238, 0.16), transparent 24%),
+        radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.20), transparent 28%),
+        #07111f !important;
+}
+.gradio-container {
+    background: transparent !important;
+}
+.gradio-container .main,
+.gradio-container .contain {
+    max-width: 1380px !important;
+    margin: 0 auto !important;
+}
+.col-left,
+.col-right {
+    padding: 20px !important;
+}
+.col-left {
+    border-right: 1px solid rgba(120, 153, 191, 0.18) !important;
+}
+.gradio-container .block,
+.gradio-container .gr-group,
+.gradio-container .gr-accordion,
+.gradio-container .gr-box,
+.gradio-container .gr-form,
+.gradio-container .gr-code,
+.gradio-container .gr-markdown,
+.gradio-container .gr-chatbot,
+.gradio-container .gr-dataframe {
+    border-radius: 18px !important;
+    border: 1px solid rgba(120, 153, 191, 0.22) !important;
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.24) !important;
+}
+.gradio-container .gr-group,
+.gradio-container .gr-box,
+.gradio-container .gr-form,
+.gradio-container .gr-code {
+    background: linear-gradient(180deg, rgba(16, 27, 47, 0.98), rgba(10, 19, 35, 0.98)) !important;
+}
+.gradio-container .gr-button-primary,
+.gradio-container .gr-button-secondary {
+    border-radius: 14px !important;
+    font-weight: 700 !important;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease !important;
+}
+.gradio-container .gr-button-primary:hover,
+.gradio-container .gr-button-secondary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px rgba(14, 165, 233, 0.18) !important;
+}
+.gradio-container .gr-button-primary {
+    background: linear-gradient(135deg, #2563eb, #06b6d4) !important;
+    border: none !important;
+}
+.gradio-container .gr-button-secondary {
+    background: rgba(20, 34, 57, 0.96) !important;
+}
+.gradio-container textarea,
+.gradio-container input,
+.gradio-container select {
+    border-radius: 14px !important;
+}
+.gradio-container .prose,
+.gradio-container .markdown-text,
+.gradio-container .md,
+.gradio-container .prose > *,
+.gradio-container .markdown-text > * {
+    background: transparent !important;
+}
+.gradio-container h1,
+.gradio-container h2,
+.gradio-container h3 {
+    letter-spacing: -0.03em;
+}
+.gradio-container .gr-code textarea,
+.gradio-container .gr-code pre {
+    font-size: 13px !important;
+}
+footer {
+    display: none !important;
+}
+"""
+
+openenv_web_interface.OPENENV_GRADIO_THEME = CUSTOM_GRADIO_THEME
+openenv_web_interface.OPENENV_GRADIO_CSS = CUSTOM_GRADIO_CSS
+
 
 app = create_app(
     SmartInboxProEnvironment,
@@ -26,6 +153,38 @@ app = create_app(
     env_name="smartinbox_pro",
     max_concurrent_envs=4,
 )
+
+app.title = "SmartInbox-Pro API"
+app.description = """
+# SmartInbox-Pro API
+
+Clean HTTP interface for the SmartInbox-Pro OpenEnv deployment.
+
+## What You Can Do
+
+* Start a fresh episode with `/reset`
+* Classify the current email with `/step`
+* Inspect live environment memory with `/state`
+* Verify the deployment quickly with `/health`
+
+## Labels
+
+* `0` = spam
+* `1` = normal
+* `2` = urgent
+
+## Notes
+
+The interactive playground is available at `/web`.
+"""
+app.swagger_ui_parameters = {
+    "defaultModelsExpandDepth": -1,
+    "displayRequestDuration": True,
+    "docExpansion": "none",
+    "filter": True,
+    "syntaxHighlight.theme": "obsidian",
+    "tryItOutEnabled": True,
+}
 
 
 @app.get("/", include_in_schema=False)
