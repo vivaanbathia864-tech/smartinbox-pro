@@ -1,0 +1,59 @@
+spec_version: 1
+name: smartinbox_pro
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000
+
+title: SmartInbox-Pro
+version: "2.0.0"
+description: >
+  Production-grade OpenEnv environment for email triage with AI-assisted
+  categorization, security-aware observations, and reward-driven classification.
+author: SmartInbox Team
+license: MIT
+
+action_space:
+  type: Discrete
+  n: 3
+  labels:
+    0: spam
+    1: normal
+    2: urgent
+
+observation_space:
+  type: Vector
+  shape: [12]
+  dtype: float32
+  description: >
+    12-dimensional feature vector per email:
+    [spam_score, importance_score, urgency_score, promo_score, response_needed,
+     has_attachment, attachment_threat, pgp_signed, thread_depth,
+     sender_trust, time_sensitivity, ai_category_conf]
+
+reward_range: [-0.5, 1.0]
+reward_description: >
+  +1.0 for correct classification, +0.25 for a near miss, and -0.5 for a
+  clearly wrong classification.
+
+tasks:
+  - id: 1
+    name: Basic Email Classification
+    difficulty: easy
+    num_emails: 5
+    score_range: [0.0, 1.0]
+  - id: 2
+    name: Classification plus Prioritization
+    difficulty: medium
+    num_emails: 10
+    score_range: [0.0, 1.0]
+  - id: 3
+    name: Full Inbox Management
+    difficulty: hard
+    num_emails: 15
+    score_range: [0.0, 1.0]
+
+evaluation:
+  script: inference.py
+  metric: average_score
+  reproducible: true
