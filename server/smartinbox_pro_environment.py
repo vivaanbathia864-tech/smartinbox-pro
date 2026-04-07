@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -15,6 +16,7 @@ from smartinbox_env.env import SmartInboxEnv
 from smartinbox_env.tasks import TASKS
 
 LABEL_NAMES = {0: "spam", 1: "normal", 2: "urgent"}
+README_PATH = Path(__file__).resolve().parent.parent / "README.md"
 
 
 class SmartInboxProEnvironment(Environment):
@@ -87,9 +89,14 @@ class SmartInboxProEnvironment(Environment):
         return self._state
 
     def get_metadata(self) -> EnvironmentMetadata:
+        readme_content = None
+        if README_PATH.exists():
+            readme_content = README_PATH.read_text(encoding="utf-8")
+
         return EnvironmentMetadata(
             name="SmartInbox-Pro",
             description="Email triage environment with AI and security-aware observations.",
+            readme_content=readme_content,
             version="2.0.0",
             author="SmartInbox Team",
         )
