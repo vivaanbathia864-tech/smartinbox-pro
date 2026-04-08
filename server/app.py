@@ -102,6 +102,12 @@ body {
     max-width: 1380px !important;
     margin: 0 auto !important;
 }
+.gradio-container .tabs {
+    border: 1px solid rgba(120, 153, 191, 0.18) !important;
+    border-radius: 20px !important;
+    background: rgba(9, 18, 34, 0.5) !important;
+    padding: 8px !important;
+}
 .col-left,
 .col-right {
     padding: 20px !important;
@@ -166,6 +172,38 @@ body {
 .gradio-container .gr-code textarea,
 .gradio-container .gr-code pre {
     font-size: 13px !important;
+}
+.viz-hero,
+.viz-panel,
+.viz-status {
+    border-radius: 20px !important;
+    border: 1px solid rgba(120, 153, 191, 0.20) !important;
+    background: linear-gradient(180deg, rgba(15, 28, 47, 0.96), rgba(10, 19, 35, 0.96)) !important;
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.22) !important;
+}
+.viz-hero {
+    padding: 10px 12px !important;
+}
+.viz-panel {
+    padding: 6px !important;
+}
+.viz-actions {
+    gap: 14px !important;
+    margin-top: 6px !important;
+}
+.viz-actions .gr-button {
+    min-height: 54px !important;
+    font-size: 18px !important;
+}
+.viz-json .wrap {
+    min-height: 360px !important;
+}
+.viz-json pre,
+.viz-json textarea {
+    line-height: 1.55 !important;
+}
+.viz-muted {
+    color: #b9c8dd;
 }
 footer {
     display: none !important;
@@ -287,12 +325,12 @@ def _task_guide_html(state: dict[str, object]) -> str:
         background = "rgba(13, 31, 56, 0.98)" if active else "rgba(11, 21, 38, 0.9)"
         ladder.append(
             f"""
-            <div style="padding:12px 14px; border-radius:16px; border:1px solid {border}; background:{background};">
+            <div style="padding:10px 12px; border-radius:14px; border:1px solid {border}; background:{background};">
               <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
-                <strong style="color:#eff6ff;">Task {current_id}: {escape(current_task['name'])}</strong>
+                <strong style="color:#eff6ff; font-size:14px;">Task {current_id}: {escape(current_task['name'])}</strong>
                 <span style="padding:4px 8px; border-radius:999px; font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:#8fd6ff; background:rgba(37, 99, 235, 0.16);">{escape(current_task['difficulty'])}</span>
               </div>
-              <div style="color:#b9c8dd; font-size:14px; margin-top:6px;">{escape(current_task['description'])}</div>
+              <div style="color:#b9c8dd; font-size:13px; margin-top:5px; line-height:1.45;">{escape(current_task['description'])}</div>
             </div>
             """
         )
@@ -316,15 +354,37 @@ def _task_guide_html(state: dict[str, object]) -> str:
     """
 
 
-def _history_md(state: dict[str, object]) -> str:
+def _history_html(state: dict[str, object]) -> str:
     predictions = state.get("predictions_so_far", []) or []
     if not predictions:
-        return "No actions yet. Press **Reset** and classify the first email."
+        return """
+        <div style="padding:14px 16px; border-radius:16px; border:1px solid rgba(94, 126, 168, 0.18); background:rgba(11, 21, 38, 0.94); color:#eff6ff; line-height:1.6;">
+          No actions yet. Press <strong>Reset Task</strong> and classify the first email.
+        </div>
+        """
     label_names = {0: "spam", 1: "normal", 2: "urgent"}
     chips = []
     for index, label in enumerate(predictions, start=1):
-        chips.append(f"`{index}. {label_names.get(int(label), str(label))}`")
-    return " ".join(chips)
+        label_name = label_names.get(int(label), str(label))
+        color = LABEL_STYLES.get(label_name, LABEL_STYLES["normal"])
+        chips.append(
+            f'<span style="padding:8px 10px; border-radius:999px; background:{color}; border:1px solid rgba(255,255,255,0.08); color:#eff6ff; font-size:13px; font-weight:700;">{index}. {escape(label_name)}</span>'
+        )
+    return f"""
+    <div style="display:grid; gap:10px;">
+      <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#7fa6d6;">Action history</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">{''.join(chips)}</div>
+    </div>
+    """
+
+
+def _status_html(message: str) -> str:
+    return f"""
+    <div style="padding:14px 16px; border-radius:16px; background:rgba(11, 21, 38, 0.96); border:1px solid rgba(94, 126, 168, 0.18); color:#eff6ff; line-height:1.6;">
+      <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#7fa6d6; margin-bottom:6px;">Status</div>
+      <div style="font-size:15px;">{escape(message)}</div>
+    </div>
+    """
 
 
 def create_visualization_tab(
@@ -345,8 +405,8 @@ def create_visualization_tab(
             _progress_html(state),
             _task_guide_html(state),
             _state_summary_html(state, response),
-            _history_md(state),
-            "Environment reset. Review the email card and choose a label.",
+            _history_html(state),
+            _status_html("Environment reset. Review the email card and choose a label."),
             json.dumps(response, indent=2),
         )
 
@@ -359,8 +419,8 @@ def create_visualization_tab(
             _progress_html(state),
             _task_guide_html(state),
             _state_summary_html(state, response),
-            _history_md(state),
-            f"Applied label: {label_name}.",
+            _history_html(state),
+            _status_html(f"Applied label: {label_name}."),
             json.dumps(response, indent=2),
         )
 
@@ -380,22 +440,19 @@ def create_visualization_tab(
 
             A cleaner operator view for exploring the SmartInbox-Pro environment without
             replacing the default OpenEnv playground.
-            """
+            """,
+            elem_classes=["viz-hero"],
         )
-        with gr.Row():
-            with gr.Column(scale=5):
-                progress = gr.HTML(_progress_html({"current_step": 0, "total_emails": 1}))
-                email_card = gr.HTML(_current_email_html({}))
-            with gr.Column(scale=3):
-                task_guide = gr.HTML(_task_guide_html({}))
-                status_cards = gr.HTML(_state_summary_html({}))
-                history = gr.Markdown(_history_md({}))
-                status = gr.Textbox(
-                    value="Reset the environment to load a task.",
-                    label="Status",
-                    interactive=False,
-                )
-        with gr.Row():
+        with gr.Row(equal_height=False):
+            with gr.Column(scale=7, min_width=560):
+                progress = gr.HTML(_progress_html({"current_step": 0, "total_emails": 1}), elem_classes=["viz-panel"])
+                email_card = gr.HTML(_current_email_html({}), elem_classes=["viz-panel"])
+            with gr.Column(scale=5, min_width=360):
+                task_guide = gr.HTML(_task_guide_html({}), elem_classes=["viz-panel"])
+                status_cards = gr.HTML(_state_summary_html({}), elem_classes=["viz-panel"])
+                history = gr.HTML(_history_html({}), elem_classes=["viz-panel"])
+                status = gr.HTML(_status_html("Reset the environment to load a task."), elem_classes=["viz-status"])
+        with gr.Row(elem_classes=["viz-actions"]):
             reset_btn = gr.Button("Reset Task", variant="secondary")
             spam_btn = gr.Button("Mark Spam", variant="secondary")
             normal_btn = gr.Button("Mark Normal", variant="secondary")
@@ -404,6 +461,7 @@ def create_visualization_tab(
             label="Latest Environment Response",
             language="json",
             interactive=False,
+            elem_classes=["viz-json"],
         )
 
         reset_btn.click(
