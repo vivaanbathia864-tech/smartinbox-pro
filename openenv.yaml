@@ -41,17 +41,17 @@ tasks:
     name: Basic Email Classification
     difficulty: easy
     num_emails: 5
-    score_range: [0.0, 1.0]
+    score_range: [0.001, 0.999]
   - id: 2
     name: Classification plus Prioritization
     difficulty: medium
     num_emails: 10
-    score_range: [0.0, 1.0]
+    score_range: [0.001, 0.999]
   - id: 3
     name: Full Inbox Management
     difficulty: hard
     num_emails: 15
-    score_range: [0.0, 1.0]
+    score_range: [0.001, 0.999]
 
 evaluation:
   script: inference.py
