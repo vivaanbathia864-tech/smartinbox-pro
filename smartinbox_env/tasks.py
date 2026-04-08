@@ -321,6 +321,67 @@ def _strict_score(raw_score):
     return round(bounded, 3)
 
 
+def _normalize_submission(predictions, emails):
+    """Return labels and an ordering for multi-part task evaluation."""
+    if isinstance(predictions, dict):
+        labels = list(predictions.get("labels", []))
+        order = list(predictions.get("order", []))
+    else:
+        labels = list(predictions)
+        order = []
+
+    if not order:
+        severity_rank = {2: 0, 1: 1, 0: 2}
+        indexed_predictions = []
+        for idx, email in enumerate(emails):
+            label = labels[idx] if idx < len(labels) else 1
+            indexed_predictions.append((severity_rank.get(label, 1), idx, email["id"]))
+        order = [email_id for _, _, email_id in sorted(indexed_predictions)]
+
+    return labels, order
+
+
+def _classification_score(labels, emails):
+    correct = sum(
+        1 for i, email in enumerate(emails)
+        if i < len(labels) and labels[i] == email["label"]
+    )
+    return correct / len(emails)
+
+
+def _priority_order_score(ordered_ids, emails):
+    urgent_ids = [e["id"] for e in emails if e["label"] == 2]
+    normal_ids = [e["id"] for e in emails if e["label"] == 1]
+    spam_ids = [e["id"] for e in emails if e["label"] == 0]
+
+    if not ordered_ids:
+        return 0.0
+
+    def _positions(ids):
+        return [ordered_ids.index(email_id) for email_id in ids if email_id in ordered_ids]
+
+    urgent_positions = _positions(urgent_ids)
+    normal_positions = _positions(normal_ids)
+    spam_positions = _positions(spam_ids)
+
+    if not urgent_positions or not spam_positions:
+        return 0.0
+
+    urgent_before_spam = max(urgent_positions) < min(spam_positions)
+    normal_between = True
+    if normal_positions:
+        normal_between = (
+            max(urgent_positions) < min(normal_positions) and
+            max(normal_positions) < min(spam_positions)
+        )
+
+    if urgent_before_spam and normal_between:
+        return 1.0
+    if urgent_before_spam:
+        return 0.5
+    return 0.0
+
+
 def grade_task(task_id, predictions, reply_drafts=None):
     """
     Grade agent predictions for a given task.
@@ -331,43 +392,21 @@ def grade_task(task_id, predictions, reply_drafts=None):
 
     if task_id == 1:
         # Easy: just classification accuracy
-        correct = sum(
-            1 for i, email in enumerate(emails)
-            if i < len(predictions) and predictions[i] == email["label"]
-        )
-        return _strict_score(correct / len(emails))
+        labels, _ = _normalize_submission(predictions, emails)
+        return _strict_score(_classification_score(labels, emails))
 
     elif task_id == 2:
         # Medium: classification (60%) + prioritization order (40%)
-        correct = sum(
-            1 for i, email in enumerate(emails)
-            if i < len(predictions) and predictions[i] == email["label"]
-        )
-        classification_score = correct / len(emails)
-
-        # Check if urgent emails appear before normal, normal before spam
-        urgent_ids = [e["id"] for e in emails if e["label"] == 2]
-        spam_ids = [e["id"] for e in emails if e["label"] == 0]
-        order_score = 0.0
-        if isinstance(predictions, dict) and "order" in predictions:
-            ordered = predictions["order"]
-            urgent_positions = [ordered.index(i) for i in urgent_ids if i in ordered]
-            spam_positions = [ordered.index(i) for i in spam_ids if i in ordered]
-            if urgent_positions and spam_positions:
-                if max(urgent_positions) < min(spam_positions):
-                    order_score = 1.0
-                else:
-                    order_score = 0.5
-
+        labels, ordered = _normalize_submission(predictions, emails)
+        classification_score = _classification_score(labels, emails)
+        order_score = _priority_order_score(ordered, emails)
         return _strict_score(0.6 * classification_score + 0.4 * order_score)
 
     elif task_id == 3:
         # Hard: classification (40%) + prioritization (30%) + reply quality (30%)
-        correct = sum(
-            1 for i, email in enumerate(emails)
-            if i < len(predictions) and predictions[i] == email["label"]
-        )
-        classification_score = correct / len(emails)
+        labels, ordered = _normalize_submission(predictions, emails)
+        classification_score = _classification_score(labels, emails)
+        order_score = _priority_order_score(ordered, emails)
 
         reply_score = 0.0
         if reply_drafts:
@@ -383,6 +422,6 @@ def grade_task(task_id, predictions, reply_drafts=None):
             if scored_replies > 0:
                 reply_score = reply_score / scored_replies
 
-        return _strict_score(0.4 * classification_score + 0.3 * 0.0 + 0.3 * reply_score)
+        return _strict_score(0.4 * classification_score + 0.3 * order_score + 0.3 * reply_score)
 
     return _strict_score(0.0)

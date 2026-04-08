@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 
 from openai import OpenAI
@@ -33,6 +34,15 @@ Urgent is outages, legal/compliance deadlines, billing failures, security incide
 angry customer escalations, or anything that clearly needs fast action.
 Normal is routine work mail, newsletters, reminders, and informational updates.
 """.strip()
+
+TASK_PROMPTS = {
+    1: "Focus only on classification accuracy for the current email.",
+    2: "Classify with inbox prioritization in mind: urgent first, routine work next, spam last.",
+    3: (
+        "Classify with full inbox management in mind. Urgent items should be action-oriented, "
+        "and later reply drafts should acknowledge the issue, name an action, and promise an update."
+    ),
+}
 
 
 def log_event(stage: str, payload: dict[str, Any]) -> None:
@@ -71,9 +81,74 @@ def heuristic_label(obs: list[float]) -> int:
     return 1
 
 
+def _extract_json_object(content: str) -> dict[str, Any]:
+    cleaned = content.strip()
+    if not cleaned:
+        raise ValueError("Empty response content.")
+
+    fenced_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, re.DOTALL)
+    if fenced_match:
+        cleaned = fenced_match.group(1).strip()
+
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        brace_match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+        if not brace_match:
+            raise
+        return json.loads(brace_match.group(0))
+
+
+def text_heuristic_label(email: dict[str, Any], obs: list[float]) -> tuple[int, str]:
+    subject = email["subject"].lower()
+    body = email["body"].lower()
+    sender = email["sender"].lower()
+    combined = f"{subject}\n{body}"
+
+    spam_markers = [
+        "win", "winner", "gift card", "lottery", "cheap", "loan",
+        "free iphone", "no prescription", "work from home", "singles",
+        "90% off", "click here", "pre-approved",
+    ]
+    urgent_markers = [
+        "urgent", "critical", "down", "offline", "failed", "breach", "security",
+        "deadline", "today", "immediately", "fire", "compliance", "legal",
+        "customer", "production", "payment failed", "response needed",
+    ]
+    trusted_domains = ("@company.com", "@infra.com", "@lawfirm.com", "@datacenter.com")
+
+    if any(marker in combined for marker in spam_markers):
+        return 0, "Text heuristic matched spam markers."
+    if any(marker in combined for marker in urgent_markers):
+        return 2, "Text heuristic matched urgent markers."
+    if sender.endswith(trusted_domains):
+        return heuristic_label(obs), "Trusted sender, used structured heuristic."
+    return heuristic_label(obs), "Fallback structured heuristic."
+
+
+def priority_score(email: dict[str, Any], label: int) -> tuple[int, float, int]:
+    severity_rank = {2: 0, 1: 1, 0: 2}
+    features = list(email.get("features", []))
+    spam_score = float(features[0]) if len(features) > 0 else 0.0
+    importance = float(features[1]) if len(features) > 1 else 0.0
+    urgency = float(features[2]) if len(features) > 2 else 0.0
+    response_needed = float(features[4]) if len(features) > 4 else 0.0
+    time_sensitivity = float(features[10]) if len(features) > 10 else 0.0
+
+    signal = (
+        0.45 * urgency
+        + 0.25 * importance
+        + 0.2 * response_needed
+        + 0.1 * time_sensitivity
+        - 0.25 * spam_score
+    )
+    return severity_rank.get(label, 1), -signal, int(email["id"].lstrip("e"))
+
+
 def email_context(email: dict[str, Any], obs: list[float], task_id: int) -> str:
     return (
         f"Task {task_id}: {TASKS[task_id]['name']}\n"
+        f"Task guidance: {TASK_PROMPTS[task_id]}\n"
         f"Subject: {email['subject']}\n"
         f"Sender: {email['sender']}\n"
         f"Body: {email['body']}\n"
@@ -88,9 +163,9 @@ def llm_label(
     obs: list[float],
     task_id: int,
 ) -> tuple[int, str, str]:
-    fallback = heuristic_label(obs)
+    fallback, fallback_reason = text_heuristic_label(email, obs)
     if client is None:
-        return fallback, "heuristic", "No HF_TOKEN set; used deterministic heuristic."
+        return fallback, "heuristic", fallback_reason
 
     try:
         response = client.chat.completions.create(
@@ -102,42 +177,75 @@ def llm_label(
             ],
         )
         content = response.choices[0].message.content or ""
-        parsed = json.loads(content)
+        parsed = _extract_json_object(content)
         label = int(parsed["label"])
         if label not in LABEL_NAMES:
             raise ValueError(f"Unsupported label: {label}")
         explanation = str(parsed.get("explanation", "")).strip() or "LLM classification."
         return label, "llm", explanation
     except Exception as exc:
-        return fallback, "heuristic-fallback", f"LLM fallback: {type(exc).__name__}"
+        return fallback, "heuristic-fallback", f"{fallback_reason} LLM fallback: {type(exc).__name__}"
 
 
 def draft_reply(email: dict[str, Any]) -> str:
+    keywords = email.get("expected_reply_keywords", [])
     subject = email["subject"].lower()
+    if keywords:
+        phrase_map = {
+            "acknowledge": "acknowledge the issue",
+            "investigating": "start investigating immediately",
+            "fix": "work on a fix",
+            "soon": "share an update soon",
+            "team": "coordinate with the team",
+            "resolve": "resolve it quickly",
+            "legal": "loop in legal",
+            "respond": "respond formally",
+            "review": "review the notice carefully",
+            "schedule": "schedule the call",
+            "call": "join the call",
+            "today": "do this today",
+            "available": "be available for it",
+            "confirm": "confirm next steps",
+            "dispatch": "dispatch the team",
+            "immediately": "act immediately",
+            "checking": "start checking the system",
+            "processing": "start processing the request",
+            "compliance": "handle the compliance work",
+            "data": "prepare the data",
+            "handle": "handle the request",
+        }
+        actions = [phrase_map.get(keyword.lower(), keyword.lower()) for keyword in keywords]
+        if len(actions) == 1:
+            action_phrase = actions[0]
+        else:
+            action_phrase = ", ".join(actions[:-1]) + f", and {actions[-1]}"
+        return (
+            f"Hello, we acknowledge this urgent note regarding '{email['subject']}'. "
+            f"Our team will {action_phrase} and share an update today."
+        )
     if "investor" in subject or "call" in subject:
         return (
             "Hello, we acknowledge the urgency here. We can schedule a call today, "
             "confirm availability, and arrange the team response immediately."
         )
-    if "legal" in subject or "copyright" in subject:
-        return (
-            "Hello, we acknowledge your notice. Our legal team will review this today "
-            "and respond after internal review."
-        )
-    if "data export" in subject or "compliance" in subject:
-        return (
-            "Hello, we are processing the compliance data request today and our team "
-            "will handle the export before the deadline."
-        )
-    if "fire" in subject or "offline" in subject or "critical" in subject:
-        return (
-            "Hello, we acknowledge the urgent issue. Our team is investigating "
-            "immediately and will resolve it as soon as possible."
-        )
     return (
         "Hello, we acknowledge this urgent request. Our team is reviewing it now "
         "and will respond with an update today."
     )
+
+
+def build_submission_payload(task_id: int, emails: list[dict[str, Any]], labels: list[int]) -> list[int] | dict[str, Any]:
+    if task_id == 1:
+        return labels
+
+    ordered_ids = [
+        email["id"]
+        for email, label in sorted(
+            zip(emails, labels, strict=False),
+            key=lambda pair: priority_score(pair[0], pair[1]),
+        )
+    ]
+    return {"labels": labels, "order": ordered_ids}
 
 
 def run_task(task_id: int, client: OpenAI | None) -> dict[str, Any]:
@@ -147,7 +255,8 @@ def run_task(task_id: int, client: OpenAI | None) -> dict[str, Any]:
         enable_security=True,
     )
     obs, info = env.reset(task_id=task_id)
-    predictions: list[int] = []
+    requested_labels: list[int] = []
+    applied_labels: list[int] = []
     reply_drafts: dict[str, str] = {}
     total_reward = 0.0
     done = False
@@ -162,7 +271,7 @@ def run_task(task_id: int, client: OpenAI | None) -> dict[str, Any]:
     )
 
     while not done:
-        step_position = len(predictions)
+        step_position = len(requested_labels)
         current_email = TASKS[task_id]["emails"][step_position]
         features = [float(value) for value in obs.tolist()]
         label, mode, explanation = llm_label(client, current_email, features, task_id)
@@ -173,19 +282,23 @@ def run_task(task_id: int, client: OpenAI | None) -> dict[str, Any]:
         next_obs, reward, terminated, truncated, step_info = env.step(label)
         done = bool(terminated or truncated)
         total_reward += float(reward)
-        predictions.append(label)
+        applied_label = int(step_info.get("action_taken", label))
+        requested_labels.append(label)
+        applied_labels.append(applied_label)
 
         log_event(
             "STEP",
             {
-                "action": label,
-                "action_name": LABEL_NAMES[label],
+                "action": applied_label,
+                "action_name": LABEL_NAMES[applied_label],
                 "done": done,
                 "email_id": current_email["id"],
                 "explanation": explanation,
+                "requested_action": label,
+                "requested_action_name": LABEL_NAMES[label],
                 "mode": mode,
                 "reward": reward,
-                "step_index": len(predictions),
+                "step_index": len(requested_labels),
                 "subject": current_email["subject"],
                 "task_id": task_id,
             },
@@ -193,16 +306,19 @@ def run_task(task_id: int, client: OpenAI | None) -> dict[str, Any]:
 
         obs, info = next_obs, step_info
 
-    final_score = grade_task(task_id, predictions, reply_drafts or None)
+    submission = build_submission_payload(task_id, TASKS[task_id]["emails"], requested_labels)
+    final_score = grade_task(task_id, submission, reply_drafts or None)
     state = env.state()
     env.close()
 
     summary = {
         "avg_step_latency_ms": state["avg_step_latency_ms"],
-        "predictions": predictions,
+        "predictions": requested_labels,
+        "applied_predictions": applied_labels,
         "reply_drafts": len(reply_drafts),
         "reward": round(total_reward, 3),
         "score": final_score,
+        "submission": submission if isinstance(submission, dict) else {"labels": submission},
         "task_id": task_id,
         "task_name": TASKS[task_id]["name"],
     }

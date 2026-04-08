@@ -19,6 +19,18 @@ LABEL_NAMES = {0: "spam", 1: "normal", 2: "urgent"}
 README_PATH = Path(__file__).resolve().parent.parent / "README.md"
 
 
+def _clean_readme_content() -> str | None:
+    if not README_PATH.exists():
+        return None
+    text = README_PATH.read_text(encoding="utf-8")
+    if not text.startswith("---"):
+        return text
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return text
+    return parts[2].lstrip()
+
+
 class SmartInboxProEnvironment(Environment):
     """OpenEnv wrapper around the existing SmartInbox gym-style environment."""
 
@@ -89,14 +101,10 @@ class SmartInboxProEnvironment(Environment):
         return self._state
 
     def get_metadata(self) -> EnvironmentMetadata:
-        readme_content = None
-        if README_PATH.exists():
-            readme_content = README_PATH.read_text(encoding="utf-8")
-
         return EnvironmentMetadata(
             name="SmartInbox-Pro",
             description="Email triage environment with AI and security-aware observations.",
-            readme_content=readme_content,
+            readme_content=_clean_readme_content(),
             version="2.0.0",
             author="SmartInbox Team",
         )
