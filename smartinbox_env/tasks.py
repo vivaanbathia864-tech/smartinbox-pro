@@ -1,5 +1,8 @@
 # smartinbox_env/tasks.py
 
+STRICT_SCORE_EPSILON = 0.001
+
+
 TASKS = {
     1: {
         "name": "Basic Email Classification",
@@ -312,6 +315,12 @@ TASKS = {
 }
 
 
+def _strict_score(raw_score):
+    """Clamp scores into the strict open interval (0, 1)."""
+    bounded = min(max(float(raw_score), STRICT_SCORE_EPSILON), 1.0 - STRICT_SCORE_EPSILON)
+    return round(bounded, 3)
+
+
 def grade_task(task_id, predictions, reply_drafts=None):
     """
     Grade agent predictions for a given task.
@@ -326,7 +335,7 @@ def grade_task(task_id, predictions, reply_drafts=None):
             1 for i, email in enumerate(emails)
             if i < len(predictions) and predictions[i] == email["label"]
         )
-        return round(correct / len(emails), 3)
+        return _strict_score(correct / len(emails))
 
     elif task_id == 2:
         # Medium: classification (60%) + prioritization order (40%)
@@ -350,7 +359,7 @@ def grade_task(task_id, predictions, reply_drafts=None):
                 else:
                     order_score = 0.5
 
-        return round(0.6 * classification_score + 0.4 * order_score, 3)
+        return _strict_score(0.6 * classification_score + 0.4 * order_score)
 
     elif task_id == 3:
         # Hard: classification (40%) + prioritization (30%) + reply quality (30%)
@@ -374,6 +383,6 @@ def grade_task(task_id, predictions, reply_drafts=None):
             if scored_replies > 0:
                 reply_score = reply_score / scored_replies
 
-        return round(0.4 * classification_score + 0.3 * 0.0 + 0.3 * reply_score, 3)
+        return _strict_score(0.4 * classification_score + 0.3 * 0.0 + 0.3 * reply_score)
 
-    return 0.0
+    return _strict_score(0.0)
