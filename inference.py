@@ -278,7 +278,7 @@ def run_task(task_id: int, client: OpenAI | None) -> dict[str, Any]:
     done = False
 
     log_start(
-        f"task_{task_id}",
+        str(task_id),
         env="smartinbox_pro",
         model=MODEL_NAME,
         api=API_BASE_URL,
@@ -303,7 +303,7 @@ def run_task(task_id: int, client: OpenAI | None) -> dict[str, Any]:
 
         log_step(
             len(requested_labels),
-            task=f"task_{task_id}",
+            task=str(task_id),
             action=applied_label,
             action_name=LABEL_NAMES[applied_label],
             requested_action=label,
@@ -322,12 +322,12 @@ def run_task(task_id: int, client: OpenAI | None) -> dict[str, Any]:
     env.close()
 
     log_end(
-        f"task_{task_id}",
+        str(task_id),
         final_score,
         steps=len(requested_labels),
         success="true",
     )
-    return {"task": f"task_{task_id}", "score": final_score, "task_name": TASKS[task_id]["name"]}
+    return {"task": str(task_id), "score": final_score, "task_name": TASKS[task_id]["name"]}
 
 
 def main() -> None:
