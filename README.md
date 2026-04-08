@@ -22,7 +22,6 @@ Live links:
 - Landing page: [https://vivaan13-smartinbox-pro.hf.space/](https://vivaan13-smartinbox-pro.hf.space/)
 - Playground: [https://vivaan13-smartinbox-pro.hf.space/web/](https://vivaan13-smartinbox-pro.hf.space/web/)
 - API docs: [https://vivaan13-smartinbox-pro.hf.space/docs](https://vivaan13-smartinbox-pro.hf.space/docs)
-- Demo video: [https://youtu.be/wlyQTeDSbRY?si=Fm_6MxIwwEVK-TPu](https://youtu.be/wlyQTeDSbRY?si=Fm_6MxIwwEVK-TPu)
 
 ## Why This Is A Real Environment
 
@@ -126,16 +125,25 @@ To satisfy the hackathon validator, final task scores are clamped strictly insid
 
 ## Architecture
 
-```mermaid
-flowchart TD
-    A["OpenEnv Client / Playground"] --> B["FastAPI Server"]
-    B --> C["SmartInboxProEnvironment Wrapper"]
-    C --> D["SmartInboxEnv Core Simulator"]
-    D --> E["Task Definitions"]
-    D --> F["AI Engine Signals"]
-    D --> G["Security Signals"]
-    H["inference.py"] --> C
-    I["evaluation_report.py"] --> E
+```text
+OpenEnv Client / Playground
+        |
+        v
+FastAPI Server (server/app.py)
+        |
+        v
+SmartInboxProEnvironment Wrapper
+        |
+        v
+SmartInboxEnv Core Simulator
+   |        |         |
+   |        |         +-- Task definitions and grading
+   |        +------------ AI engine signals
+   +--------------------- Security signals
+
+Supporting scripts:
+- inference.py
+- evaluation_report.py
 ```
 
 ## Project Layout

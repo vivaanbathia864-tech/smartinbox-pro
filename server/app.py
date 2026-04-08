@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """FastAPI application entrypoint for SmartInbox-Pro."""
 
+import json
 import os
 from html import escape
 from pathlib import Path
@@ -713,7 +714,6 @@ def root() -> HTMLResponse:
                     <a class="btn btn-secondary" href="/docs" target="_self">Open API Docs</a>
                     <a class="btn btn-secondary" href="/health" target="_self">Health Check</a>
                     <a class="btn btn-secondary" href="https://github.com/vivaanbathia864-tech/smartinbox-pro" target="_blank" rel="noreferrer">GitHub Repo</a>
-                    <a class="btn btn-secondary" href="https://youtu.be/wlyQTeDSbRY?si=Fm_6MxIwwEVK-TPu" target="_blank" rel="noreferrer">Demo Video</a>
                   </div>
                   <div class="stats">
                     <div class="stat">
@@ -778,7 +778,6 @@ def root() -> HTMLResponse:
                 <h3>Resources</h3>
                 <ul>
                   <li><a href="https://github.com/vivaanbathia864-tech/smartinbox-pro" target="_blank" rel="noreferrer">Source code on GitHub</a></li>
-                  <li><a href="https://youtu.be/wlyQTeDSbRY?si=Fm_6MxIwwEVK-TPu" target="_blank" rel="noreferrer">Walkthrough video</a></li>
                   <li><a href="/docs" target="_self">Live OpenAPI reference</a></li>
                 </ul>
               </article>
