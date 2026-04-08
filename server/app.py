@@ -26,6 +26,7 @@ except ImportError:
     from models import SmartInboxProAction, SmartInboxProObservation
     from server.smartinbox_pro_environment import SmartInboxProEnvironment
 from smartinbox_env.tasks import TASKS
+from openenv.core.env_server.serialization import serialize_observation
 
 README_PATH = Path(__file__).resolve().parent.parent / "README.md"
 PLAYGROUND_README_PATH = Path(gettempdir()) / "smartinbox_pro_playground_readme.md"
@@ -354,6 +355,19 @@ def _task_guide_html(state: dict[str, object]) -> str:
     """
 
 
+def _beginner_guide_html() -> str:
+    return """
+    <div style="padding:16px 18px; border-radius:18px; background:linear-gradient(180deg, rgba(13, 31, 56, 0.98), rgba(10, 19, 35, 0.96)); border:1px solid rgba(94, 126, 168, 0.22);">
+      <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#8fd6ff; margin-bottom:8px;">What happens here?</div>
+      <div style="font-size:16px; color:#eff6ff; font-weight:700; margin-bottom:8px;">1. Start Demo  2. Read the email  3. Pick a label</div>
+      <div style="color:#b9c8dd; line-height:1.65;">
+        This page shows one email at a time. Your job is to decide whether it is spam,
+        normal, or urgent. After each choice, the app moves to the next email and updates the score.
+      </div>
+    </div>
+    """
+
+
 def _history_html(state: dict[str, object]) -> str:
     predictions = state.get("predictions_so_far", []) or []
     if not predictions:
@@ -413,15 +427,34 @@ def create_visualization_tab(
 ):
     del action_fields, metadata, is_chat_env, title, quick_start_md
 
-    async def reset_dashboard():
+    task_choices = {
+        f"Task {task_id}: {task['name']}": task_id
+        for task_id, task in TASKS.items()
+    }
+
+    async def _reset_with_task(task_id: int):
+        observation = await web_manager._run_sync_in_thread_pool(web_manager.env.reset, task_id=task_id)
+        state = web_manager.env.state
+        serialized = serialize_observation(observation)
+
+        web_manager.episode_state.episode_id = state.episode_id
+        web_manager.episode_state.step_count = 0
+        web_manager.episode_state.current_observation = serialized["observation"]
+        web_manager.episode_state.action_logs = []
+        web_manager.episode_state.is_reset = True
+        await web_manager._send_state_update()
+        return serialized
+
+    async def reset_dashboard(task_label: str):
         try:
-            response = await web_manager.reset_environment()
+            task_id = task_choices.get(task_label, 1)
+            response = await _reset_with_task(task_id)
             state = web_manager.get_state()
             return (
                 *_dashboard_snapshot(
                     state,
                     response,
-                    "Environment reset. Review the email card and choose a label.",
+                    "Demo started. Read the email on the left, then choose the best label.",
                 ),
                 json.dumps(response, indent=2),
             )
@@ -475,11 +508,11 @@ def create_visualization_tab(
             """
             # Visual Workspace
 
-            A cleaner operator view for exploring the SmartInbox-Pro environment without
-            replacing the default OpenEnv playground.
+            A beginner-friendly operator view for trying SmartInbox-Pro without using the raw API first.
             """,
             elem_classes=["viz-hero"],
         )
+        beginner_guide = gr.HTML(_beginner_guide_html(), elem_classes=["viz-panel"])
         with gr.Row(equal_height=False):
             with gr.Column(scale=7, min_width=560):
                 progress = gr.HTML(_progress_html({"current_step": 0, "total_emails": 1}), elem_classes=["viz-panel"])
@@ -489,20 +522,27 @@ def create_visualization_tab(
                 status_cards = gr.HTML(_state_summary_html({}), elem_classes=["viz-panel"])
                 history = gr.HTML(_history_html({}), elem_classes=["viz-panel"])
                 status = gr.HTML(_status_html("Reset the environment to load a task."), elem_classes=["viz-status"])
-        with gr.Row(elem_classes=["viz-actions"]):
-            reset_btn = gr.Button("Reset Task", variant="secondary")
-            spam_btn = gr.Button("Mark Spam", variant="secondary")
-            normal_btn = gr.Button("Mark Normal", variant="secondary")
-            urgent_btn = gr.Button("Mark Urgent", variant="primary")
-        raw_json = gr.Code(
-            label="Latest Environment Response",
-            language="json",
-            interactive=False,
-            elem_classes=["viz-json"],
+        task_selector = gr.Dropdown(
+            label="Choose a task",
+            choices=list(task_choices.keys()),
+            value="Task 1: Basic Email Classification",
         )
+        with gr.Row(elem_classes=["viz-actions"]):
+            reset_btn = gr.Button("Start Demo", variant="secondary")
+            spam_btn = gr.Button("This is Spam", variant="secondary")
+            normal_btn = gr.Button("This is Normal", variant="secondary")
+            urgent_btn = gr.Button("This is Urgent", variant="primary")
+        with gr.Accordion("Show raw JSON response", open=False):
+            raw_json = gr.Code(
+                label="Latest Environment Response",
+                language="json",
+                interactive=False,
+                elem_classes=["viz-json"],
+            )
 
         reset_btn.click(
             fn=reset_dashboard,
+            inputs=[task_selector],
             outputs=[email_card, progress, task_guide, status_cards, history, status, raw_json],
         )
         spam_btn.click(
