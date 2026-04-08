@@ -62,6 +62,14 @@ class SmartInboxProObservation(Observation):
         default=None,
         description="Human-readable version of the last action.",
     )
+    grader_score: float = Field(
+        default=0.001,
+        description="Task-level grader score, always kept strictly inside (0, 1).",
+    )
+    score: float = Field(
+        default=0.001,
+        description="Alias for grader_score for validator compatibility.",
+    )
 
 
 class SmartInboxProState(State):
@@ -92,6 +100,14 @@ class SmartInboxProState(State):
     avg_step_latency_ms: float = Field(
         default=0.0,
         description="Average step latency in milliseconds.",
+    )
+    grader_score: float = Field(
+        default=0.001,
+        description="Latest task-level grader score, always kept strictly inside (0, 1).",
+    )
+    final_score: float = Field(
+        default=0.001,
+        description="Alias for grader_score for validator compatibility.",
     )
     done: bool = Field(default=False, description="Whether the episode has ended.")
     current_email_id: str | None = Field(

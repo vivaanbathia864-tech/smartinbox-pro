@@ -13,7 +13,7 @@ except ImportError:
     from models import SmartInboxProAction, SmartInboxProObservation, SmartInboxProState
 
 from smartinbox_env.env import SmartInboxEnv
-from smartinbox_env.tasks import TASKS
+from smartinbox_env.tasks import STRICT_SCORE_EPSILON, TASKS
 
 LABEL_NAMES = {0: "spam", 1: "normal", 2: "urgent"}
 README_PATH = Path(__file__).resolve().parent.parent / "README.md"
@@ -141,6 +141,8 @@ class SmartInboxProEnvironment(Environment):
             ai_overrides=int(env_state.get("ai_overrides", 0)),
             security_blocks=int(env_state.get("security_blocks", 0)),
             avg_step_latency_ms=float(env_state.get("avg_step_latency_ms", 0.0)),
+            grader_score=float(env_state.get("grader_score", STRICT_SCORE_EPSILON)),
+            final_score=float(env_state.get("final_score", STRICT_SCORE_EPSILON)),
             done=bool(env_state.get("done", False)),
             current_email_id=current_email.get("id") if current_email else None,
             current_email_subject=current_email.get("subject") if current_email else None,
@@ -159,6 +161,7 @@ class SmartInboxProEnvironment(Environment):
         total_emails = self._state.total_emails
         remaining_emails = max(total_emails - self._state.current_step, 0)
         last_action = info.get("action_taken")
+        final_score = float(info.get("final_score", self._state.grader_score))
 
         return SmartInboxProObservation(
             instruction="Classify the current email as spam (0), normal (1), or urgent (2).",
@@ -176,6 +179,8 @@ class SmartInboxProEnvironment(Environment):
             remaining_emails=remaining_emails,
             last_action=last_action,
             last_action_name=LABEL_NAMES.get(last_action) if last_action is not None else None,
+            grader_score=final_score,
+            score=final_score,
             done=done,
             reward=reward,
             metadata={
@@ -183,6 +188,8 @@ class SmartInboxProEnvironment(Environment):
                 "ai_overrides": self._state.ai_overrides,
                 "security_blocks": self._state.security_blocks,
                 "avg_step_latency_ms": self._state.avg_step_latency_ms,
+                "grader_score": final_score,
+                "final_score": final_score,
             },
         )
 
@@ -202,6 +209,8 @@ class SmartInboxProEnvironment(Environment):
             ai_overrides=0,
             security_blocks=0,
             avg_step_latency_ms=0.0,
+            grader_score=STRICT_SCORE_EPSILON,
+            final_score=STRICT_SCORE_EPSILON,
             done=False,
             current_email_id=task["emails"][0]["id"],
             current_email_subject=task["emails"][0]["subject"],

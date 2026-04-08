@@ -23,7 +23,7 @@ from smartinbox_env.db.session import AsyncSessionManager
 from smartinbox_env.db.models import EmailRecord, EpisodeLog
 from smartinbox_env.security.pgp import PGPHandler
 from smartinbox_env.security.scanner import AttachmentScanner
-from smartinbox_env.tasks import TASKS, grade_task
+from smartinbox_env.tasks import STRICT_SCORE_EPSILON, TASKS, grade_task
 
 
 # ── Observation dtype (float32, shape=(12,)) ─────────────────────
@@ -43,7 +43,7 @@ class EpisodeMetrics:
     predictions: List[int] = field(default_factory=list)
     ai_overrides: int = 0         # times AI auto-action fired
     security_blocks: int = 0      # attachments blocked by scanner
-    final_score: float = 0.0
+    final_score: float = STRICT_SCORE_EPSILON
 
 
 class SmartInboxEnv(gym.Env):
@@ -181,6 +181,8 @@ class SmartInboxEnv(gym.Env):
             final_score = grade_task(self.task_id, self.metrics.predictions)
             self.metrics.final_score = final_score
             info["final_score"] = final_score
+            info["grader_score"] = final_score
+            info["score"] = final_score
             info["episode_metrics"] = self._serialize_metrics()
 
             if self._db:
@@ -218,6 +220,8 @@ class SmartInboxEnv(gym.Env):
             "ai_overrides": self.metrics.ai_overrides,
             "security_blocks": self.metrics.security_blocks,
             "avg_step_latency_ms": avg_latency,
+            "grader_score": self.metrics.final_score if self.done else STRICT_SCORE_EPSILON,
+            "final_score": self.metrics.final_score if self.done else STRICT_SCORE_EPSILON,
             "done": self.done,
         }
 
