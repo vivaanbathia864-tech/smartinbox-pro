@@ -45,8 +45,24 @@ TASK_PROMPTS = {
 }
 
 
-def log_event(stage: str, payload: dict[str, Any]) -> None:
-    print(f"[{stage}] {json.dumps(payload, sort_keys=True)}", flush=True)
+def _safe_text(value: Any) -> str:
+    text = str(value).replace("\n", " ").replace("\r", " ").strip()
+    return text.replace('"', "'")
+
+
+def log_start(task: str, **fields: Any) -> None:
+    extras = " ".join(f"{key}={_safe_text(value)}" for key, value in fields.items())
+    print(f"[START] task={_safe_text(task)} {extras}".strip(), flush=True)
+
+
+def log_step(step: int, **fields: Any) -> None:
+    extras = " ".join(f"{key}={_safe_text(value)}" for key, value in fields.items())
+    print(f"[STEP] step={step} {extras}".strip(), flush=True)
+
+
+def log_end(task: str, score: float, **fields: Any) -> None:
+    extras = " ".join(f"{key}={_safe_text(value)}" for key, value in fields.items())
+    print(f"[END] task={_safe_text(task)} score={score:.4f} {extras}".strip(), flush=True)
 
 
 def make_llm_client() -> OpenAI | None:
@@ -261,13 +277,12 @@ def run_task(task_id: int, client: OpenAI | None) -> dict[str, Any]:
     total_reward = 0.0
     done = False
 
-    log_event(
-        "START",
-        {
-            "task_description": TASKS[task_id]["description"],
-            "task_id": task_id,
-            "task_name": TASKS[task_id]["name"],
-        },
+    log_start(
+        f"task_{task_id}",
+        env="smartinbox_pro",
+        model=MODEL_NAME,
+        api=API_BASE_URL,
+        name=TASKS[task_id]["name"],
     )
 
     while not done:
@@ -286,22 +301,17 @@ def run_task(task_id: int, client: OpenAI | None) -> dict[str, Any]:
         requested_labels.append(label)
         applied_labels.append(applied_label)
 
-        log_event(
-            "STEP",
-            {
-                "action": applied_label,
-                "action_name": LABEL_NAMES[applied_label],
-                "done": done,
-                "email_id": current_email["id"],
-                "explanation": explanation,
-                "requested_action": label,
-                "requested_action_name": LABEL_NAMES[label],
-                "mode": mode,
-                "reward": reward,
-                "step_index": len(requested_labels),
-                "subject": current_email["subject"],
-                "task_id": task_id,
-            },
+        log_step(
+            len(requested_labels),
+            task=f"task_{task_id}",
+            action=applied_label,
+            action_name=LABEL_NAMES[applied_label],
+            requested_action=label,
+            mode=mode,
+            reward=f"{float(reward):.4f}",
+            done=str(done).lower(),
+            email_id=current_email["id"],
+            subject=current_email["subject"],
         )
 
         obs, info = next_obs, step_info
@@ -311,26 +321,24 @@ def run_task(task_id: int, client: OpenAI | None) -> dict[str, Any]:
     state = env.state()
     env.close()
 
-    summary = {
-        "task": f"task_{task_id}",
-        "score": final_score,
-        "task_name": TASKS[task_id]["name"],
-    }
-    log_event("END", summary)
-    return summary
+    log_end(
+        f"task_{task_id}",
+        final_score,
+        steps=len(requested_labels),
+        success="true",
+    )
+    return {"task": f"task_{task_id}", "score": final_score, "task_name": TASKS[task_id]["name"]}
 
 
 def main() -> None:
     client = make_llm_client()
-    log_event(
-        "START",
-        {
-            "api_base_url": API_BASE_URL,
-            "hf_token_present": bool(HF_TOKEN),
-            "local_image_name": LOCAL_IMAGE_NAME,
-            "model_name": MODEL_NAME,
-            "script": "inference.py",
-        },
+    log_start(
+        "run",
+        script="inference.py",
+        model=MODEL_NAME,
+        api=API_BASE_URL,
+        hf_token_present=str(bool(HF_TOKEN)).lower(),
+        local_image_name=LOCAL_IMAGE_NAME or "null",
     )
 
     task_summaries = [run_task(task_id, client) for task_id in sorted(TASKS)]
@@ -339,13 +347,7 @@ def main() -> None:
         3,
     )
 
-    log_event(
-        "END",
-        {
-            "average_score": average_score,
-            "tasks": task_summaries,
-        },
-    )
+    log_end("run", average_score, tasks=len(task_summaries))
 
 
 if __name__ == "__main__":
