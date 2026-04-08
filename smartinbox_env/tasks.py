@@ -317,7 +317,7 @@ TASKS = {
 
 def _strict_score(raw_score):
     """Clamp scores into the strict open interval (0, 1)."""
-    bounded = min(max(float(raw_score), STRICT_SCORE_EPSILON), 1.0 - STRICT_SCORE_EPSILON)
+    bounded = min(max(float(raw_score), STRICT_SCORE_EPSILON), 1 - STRICT_SCORE_EPSILON)
     return round(bounded, 3)
 
 
@@ -346,7 +346,7 @@ def _classification_score(labels, emails):
         1 for i, email in enumerate(emails)
         if i < len(labels) and labels[i] == email["label"]
     )
-    return correct / len(emails)
+    return _strict_score(correct / len(emails))
 
 
 def _priority_order_score(ordered_ids, emails):
@@ -355,7 +355,7 @@ def _priority_order_score(ordered_ids, emails):
     spam_ids = [e["id"] for e in emails if e["label"] == 0]
 
     if not ordered_ids:
-        return 0.0
+        return STRICT_SCORE_EPSILON
 
     def _positions(ids):
         return [ordered_ids.index(email_id) for email_id in ids if email_id in ordered_ids]
@@ -365,7 +365,7 @@ def _priority_order_score(ordered_ids, emails):
     spam_positions = _positions(spam_ids)
 
     if not urgent_positions or not spam_positions:
-        return 0.0
+        return STRICT_SCORE_EPSILON
 
     urgent_before_spam = max(urgent_positions) < min(spam_positions)
     normal_between = True
@@ -376,16 +376,16 @@ def _priority_order_score(ordered_ids, emails):
         )
 
     if urgent_before_spam and normal_between:
-        return 1.0
+        return _strict_score(1 - STRICT_SCORE_EPSILON)
     if urgent_before_spam:
-        return 0.5
-    return 0.0
+        return _strict_score(0.5)
+    return STRICT_SCORE_EPSILON
 
 
 def grade_task(task_id, predictions, reply_drafts=None):
     """
     Grade agent predictions for a given task.
-    Returns score between 0.0 and 1.0
+    Returns a score strictly inside the open interval (0, 1).
     """
     task = TASKS[task_id]
     emails = task["emails"]
@@ -408,7 +408,7 @@ def grade_task(task_id, predictions, reply_drafts=None):
         classification_score = _classification_score(labels, emails)
         order_score = _priority_order_score(ordered, emails)
 
-        reply_score = 0.0
+        reply_score = STRICT_SCORE_EPSILON
         if reply_drafts:
             urgent_emails = [e for e in emails if e["label"] == 2]
             scored_replies = 0
@@ -420,8 +420,8 @@ def grade_task(task_id, predictions, reply_drafts=None):
                     reply_score += hits / len(keywords)
                     scored_replies += 1
             if scored_replies > 0:
-                reply_score = reply_score / scored_replies
+                reply_score = _strict_score(reply_score / scored_replies)
 
         return _strict_score(0.4 * classification_score + 0.3 * order_score + 0.3 * reply_score)
 
-    return _strict_score(0.0)
+    return STRICT_SCORE_EPSILON

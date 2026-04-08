@@ -312,14 +312,8 @@ def run_task(task_id: int, client: OpenAI | None) -> dict[str, Any]:
     env.close()
 
     summary = {
-        "avg_step_latency_ms": state["avg_step_latency_ms"],
-        "predictions": requested_labels,
-        "applied_predictions": applied_labels,
-        "reply_drafts": len(reply_drafts),
-        "reward": round(total_reward, 3),
+        "task": f"task_{task_id}",
         "score": final_score,
-        "submission": submission if isinstance(submission, dict) else {"labels": submission},
-        "task_id": task_id,
         "task_name": TASKS[task_id]["name"],
     }
     log_event("END", summary)
