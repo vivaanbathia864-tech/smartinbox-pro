@@ -387,6 +387,22 @@ def _status_html(message: str) -> str:
     """
 
 
+def _dashboard_snapshot(
+    state: dict[str, object] | None = None,
+    response: dict[str, object] | None = None,
+    status_message: str = "Reset the environment to load a task.",
+) -> tuple[str, str, str, str, str, str]:
+    state = state or {}
+    return (
+        _current_email_html(state),
+        _progress_html(state),
+        _task_guide_html(state),
+        _state_summary_html(state, response),
+        _history_html(state),
+        _status_html(status_message),
+    )
+
+
 def create_visualization_tab(
     web_manager,
     action_fields,
@@ -398,31 +414,52 @@ def create_visualization_tab(
     del action_fields, metadata, is_chat_env, title, quick_start_md
 
     async def reset_dashboard():
-        response = await web_manager.reset_environment()
-        state = web_manager.get_state()
-        return (
-            _current_email_html(state),
-            _progress_html(state),
-            _task_guide_html(state),
-            _state_summary_html(state, response),
-            _history_html(state),
-            _status_html("Environment reset. Review the email card and choose a label."),
-            json.dumps(response, indent=2),
-        )
+        try:
+            response = await web_manager.reset_environment()
+            state = web_manager.get_state()
+            return (
+                *_dashboard_snapshot(
+                    state,
+                    response,
+                    "Environment reset. Review the email card and choose a label.",
+                ),
+                json.dumps(response, indent=2),
+            )
+        except Exception as exc:
+            state = web_manager.get_state()
+            return (
+                *_dashboard_snapshot(
+                    state,
+                    None,
+                    f"Reset failed: {type(exc).__name__}: {exc}",
+                ),
+                json.dumps({"error": str(exc)}, indent=2),
+            )
 
     async def take_action(label: int):
-        response = await web_manager.step_environment({"label": label})
-        state = web_manager.get_state()
         label_name = {0: "spam", 1: "normal", 2: "urgent"}[label]
-        return (
-            _current_email_html(state),
-            _progress_html(state),
-            _task_guide_html(state),
-            _state_summary_html(state, response),
-            _history_html(state),
-            _status_html(f"Applied label: {label_name}."),
-            json.dumps(response, indent=2),
-        )
+        try:
+            response = await web_manager.step_environment({"label": label})
+            state = web_manager.get_state()
+            return (
+                *_dashboard_snapshot(
+                    state,
+                    response,
+                    f"Applied label: {label_name}.",
+                ),
+                json.dumps(response, indent=2),
+            )
+        except Exception as exc:
+            state = web_manager.get_state()
+            friendly = (
+                "The environment is not initialized yet. Press Reset Task first."
+                if "not initialized" in str(exc).lower()
+                else f"Action failed: {type(exc).__name__}: {exc}"
+            )
+            return (
+                *_dashboard_snapshot(state, None, friendly),
+                json.dumps({"error": str(exc), "requested_label": label_name}, indent=2),
+            )
 
     async def mark_spam():
         return await take_action(0)
